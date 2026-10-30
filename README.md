@@ -69,3 +69,11 @@ placa.
 Os projetos integradores devem fixar o mesmo commit deste submódulo e versões
 compatíveis dos componentes e das interfaces da HAL. O nome `framework_app`
 identifica o repositório remoto; `src/app` identifica seu caminho no firmware.
+
+O componente `telemetry` deve fornecer `cmp_telemetry_resync()`. Após uma
+transmissão parcial, a aplicação descarta o registro truncado e envia CRLF antes
+de liberar os próximos registros. Falhas nesse delimitador são repetidas com
+intervalo de 1000 ms, sem reenviar o prefixo do registro descartado. O receptor
+deve ignorar linhas vazias ou incompletas. O estado de recuperação é mantido até
+o delimitador ser transmitido; reinicializar a aplicação pressupõe uma nova
+fronteira de fluxo estabelecida pela integração.
