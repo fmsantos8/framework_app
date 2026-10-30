@@ -14,6 +14,7 @@ static uint32_t head = 0;                      /** Oldest queued record. */
 static uint32_t count = 0;                     /** Number of queued records. */
 static uint32_t retry_since = 0;               /** Time after the latest failed send returned. */
 static bool waiting_retry = false;             /** The next UART attempt is delayed. */
+static bool resync_pending = false;            /** A partial record must be terminated before sending another. */
 static bool initialized = false;               /** True after successful task initialization. */
 
 static bool enqueue(const record_t *record) {
@@ -42,6 +43,7 @@ bool app_telemetry_init(uint32_t (*get_ticks_function)(void)) {
     count = 0;
     retry_since = 0;
     waiting_retry = false;
+    resync_pending = false;
     initialized = true;
     return true;
 }
@@ -63,10 +65,23 @@ bool app_telemetry_report_error(telemetry_source_t source, int32_t code) {
 }
 
 void app_telemetry_run(const telemetry_t *telemetry) {
-    if (telemetry == NULL || !initialized || count == 0) {
+    if (telemetry == NULL || !initialized || (count == 0 && !resync_pending)) {
         return;
     }
     if (waiting_retry && (uint32_t)(get_ticks() - retry_since) < RETRY_INTERVAL) {
+        return;
+    }
+
+    if (resync_pending) {
+        uint32_t transmitted = 0;
+        const telemetry_status_t status = cmp_telemetry_resync(telemetry, &transmitted);
+        if (status == TELEMETRY_STATUS_OK) {
+            resync_pending = false;
+            waiting_retry = false;
+        } else {
+            retry_since = get_ticks();
+            waiting_retry = true;
+        }
         return;
     }
 
@@ -89,6 +104,7 @@ void app_telemetry_run(const telemetry_t *telemetry) {
     if (transmitted != 0 || (status != TELEMETRY_STATUS_TIMEOUT && status != TELEMETRY_STATUS_COMMUNICATION_ERROR)) {
         remove_head();
     }
+    resync_pending = transmitted != 0;
     retry_since = get_ticks();
     waiting_retry = true;
 }

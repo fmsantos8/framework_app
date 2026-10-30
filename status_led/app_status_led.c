@@ -13,7 +13,8 @@ static uint32_t (*get_ticks)(void) = NULL; /** Time source supplied by the integ
 static uint8_t i2c_errors = 0;             /** Independent sensor and display error bits. */
 static bool operation_ready = false;       /** True after startup is complete. */
 static uint32_t last_transition = 0;       /** Timestamp of the current blink phase. */
-static int8_t led_state = -1;              /** Last requested led state; -1 before the first command. */
+static int8_t led_state = -1;              /** Last confirmed led state; -1 before the first successful command. */
+static bool blink_state = false;           /** Desired state of the current blink phase, independent of GPIO failures. */
 static bool blink_active = false;          /** True after starting the current blink sequence. */
 static bool initialized = false;           /** True after successful task initialization. */
 
@@ -27,6 +28,7 @@ bool app_status_led_init(uint32_t (*get_ticks_function)(void)) {
     i2c_errors = 0;
     operation_ready = false;
     led_state = -1;
+    blink_state = false;
     blink_active = false;
     initialized = true;
     return true;
@@ -60,22 +62,20 @@ void app_status_led_run(const led_t *led) {
 
     if (i2c_errors != 0) {
         const uint32_t now = get_ticks();
-        state_to_set = led_state == 1;
-
         if (!blink_active) {
             blink_active = true;
-            state_to_set = false;
+            blink_state = false;
             last_transition = now;
         } else if ((uint32_t)(now - last_transition) >= APP_STATUS_LED_BLINK_INTERVAL) {
-            state_to_set = !state_to_set;
+            blink_state = !blink_state;
             last_transition = now;
         }
+        state_to_set = blink_state;
     } else {
         blink_active = false;
     }
 
-    if (state_to_set != led_state) {
-        cmp_led_set(led, state_to_set);
+    if (state_to_set != led_state && cmp_led_set(led, state_to_set) == LED_STATUS_OK) {
         led_state = state_to_set;
     }
 }
